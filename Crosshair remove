@@ -1,0 +1,21 @@
+(function() {
+    const removeCrosshair = () => {
+        const el = document.getElementById('crosshair');
+        if (el && el.parentNode) {
+            el.remove();
+            console.log('[Shell] Crosshair element removed.');
+        }
+
+        document.querySelectorAll('[class*="crosshair"]').forEach(e => {
+            if (e.parentNode) e.remove();
+        });
+    };
+
+    // Remove immediately
+    removeCrosshair();
+
+    // Keep removing every second to prevent re-add
+    setInterval(removeCrosshair, 1000);
+
+    console.log('%c[Shell] Crosshair auto-removed and kept off.', 'color: red; font-weight: bold');
+})();
