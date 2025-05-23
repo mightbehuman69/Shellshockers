@@ -1,0 +1,609 @@
+(() => {
+  // ==== UTILITY FUNCTIONS ====
+  function createElem(tag, props = {}, ...children) {
+    const el = document.createElement(tag);
+    Object.entries(props).forEach(([k, v]) => {
+      if (k === 'style') {
+        Object.assign(el.style, v);
+      } else if (k.startsWith('on') && typeof v === 'function') {
+        el.addEventListener(k.slice(2), v);
+      } else if (k === 'html') {
+        el.innerHTML = v;
+      } else {
+        el.setAttribute(k, v);
+      }
+    });
+    children.forEach(child => {
+      if (typeof child === 'string') {
+        el.appendChild(document.createTextNode(child));
+      } else if (child) {
+        el.appendChild(child);
+      }
+    });
+    return el;
+  }
+
+  // ==== INJECT GLOBAL CSS FOR CYBERPUNK THEME & ANIMATIONS ====
+  const cyberpunkCSS = `
+    /* Basic reset and font */
+    * {
+      box-sizing: border-box !important;
+      font-family: 'Orbitron', 'Share Tech Mono', monospace !important;
+      user-select: none !important;
+    }
+    body, html, #app {
+      background: radial-gradient(circle at center, #110022 0%, #000000 90%) !important;
+      color: #ff44ff !important;
+      overflow: hidden !important;
+      height: 100% !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+
+    /* Neon glow text */
+    .glow-text {
+      color: #ff55ff;
+      text-shadow:
+        0 0 5px #ff55ff,
+        0 0 10px #ff55ff,
+        0 0 20px #ff00ff,
+        0 0 30px #ff00ff,
+        0 0 40px #ff00ff,
+        0 0 50px #ff00ff,
+        0 0 60px #ff00ff;
+    }
+
+    /* Starry animated background */
+    #cyberpunk-stars {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      pointer-events: none;
+      z-index: 0;
+      background:
+        radial-gradient(2px 2px at 20% 30%, #ff55ff, transparent),
+        radial-gradient(2px 2px at 50% 50%, #ff33ff, transparent),
+        radial-gradient(2px 2px at 70% 80%, #ff00ff, transparent);
+      animation: starsTwinkle 5s infinite alternate;
+      mix-blend-mode: screen;
+    }
+    @keyframes starsTwinkle {
+      0% {opacity: 0.5;}
+      100% {opacity: 1;}
+    }
+
+    /* Cyberpunk glitch effect */
+    @keyframes glitch-anim {
+      0% {
+        clip-path: inset(10% 0 90% 0);
+        transform: translate(2px, -2px);
+      }
+      20% {
+        clip-path: inset(50% 0 40% 0);
+        transform: translate(-2px, 2px);
+      }
+      40% {
+        clip-path: inset(20% 0 80% 0);
+        transform: translate(2px, 2px);
+      }
+      60% {
+        clip-path: inset(80% 0 10% 0);
+        transform: translate(-2px, -2px);
+      }
+      80% {
+        clip-path: inset(40% 0 50% 0);
+        transform: translate(2px, -2px);
+      }
+      100% {
+        clip-path: inset(10% 0 90% 0);
+        transform: translate(0, 0);
+      }
+    }
+    .glitch {
+      position: relative;
+      color: #ff00ff;
+      animation: glitch-anim 2s infinite;
+      font-weight: bold;
+    }
+
+    /* Custom crosshair style */
+    #custom-crosshair {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      width: 40px;
+      height: 40px;
+      margin-left: -20px;
+      margin-top: -20px;
+      pointer-events: none;
+      z-index: 9999999;
+      mix-blend-mode: screen;
+    }
+    #custom-crosshair svg line {
+      stroke: #ff00ff;
+      stroke-width: 2;
+      stroke-linecap: round;
+      filter: drop-shadow(0 0 4px #ff00ff);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% {stroke-opacity: 1;}
+      50% {stroke-opacity: 0.5;}
+    }
+
+    /* Killfeed styling */
+    #killfeed-container {
+      position: fixed;
+      top: 10%;
+      right: 2%;
+      width: 300px;
+      max-height: 50vh;
+      overflow-y: auto;
+      background: rgba(10, 0, 30, 0.7);
+      border: 1px solid #ff00ff;
+      border-radius: 6px;
+      padding: 8px;
+      font-size: 14px;
+      color: #ff55ff;
+      font-weight: bold;
+      z-index: 999999;
+      user-select: none;
+      box-shadow:
+        0 0 8px #ff00ff,
+        inset 0 0 6px #ff00ff;
+    }
+
+    /* Control panel styling */
+    #cp-panel {
+      position: fixed;
+      top: 50px;
+      left: 20px;
+      width: 320px;
+      max-height: 600px;
+      background: rgba(10, 0, 30, 0.95);
+      border: 2px solid #ff00ff;
+      border-radius: 12px;
+      box-shadow: 0 0 15px #ff00ff;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 13px;
+      color: #ff55ff;
+      z-index: 99999999;
+      user-select: none;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    #cp-panel header {
+      padding: 10px;
+      background: #330033;
+      border-bottom: 2px solid #ff00ff;
+      font-weight: 900;
+      font-size: 16px;
+      cursor: move;
+      user-select: none;
+    }
+    #cp-panel .content {
+      overflow-y: auto;
+      flex: 1;
+      padding: 10px;
+    }
+    #cp-panel label {
+      display: block;
+      margin: 6px 0 4px;
+      cursor: pointer;
+    }
+    #cp-panel input[type=checkbox] {
+      margin-right: 6px;
+      cursor: pointer;
+    }
+    #cp-panel select, #cp-panel input[type=color] {
+      background: #220022;
+      border: 1px solid #ff00ff;
+      border-radius: 4px;
+      color: #ff55ff;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 13px;
+      padding: 2px 6px;
+      cursor: pointer;
+      user-select: none;
+    }
+    #cp-panel button {
+      margin-top: 8px;
+      padding: 6px 12px;
+      background: #ff00ff;
+      border: none;
+      border-radius: 6px;
+      color: black;
+      font-weight: bold;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.3s ease;
+    }
+    #cp-panel button:hover {
+      background: #ff55ff;
+      color: black;
+    }
+
+    /* Scrollbar styling */
+    #cp-panel .content::-webkit-scrollbar {
+      width: 8px;
+    }
+    #cp-panel .content::-webkit-scrollbar-track {
+      background: #220022;
+      border-radius: 10px;
+    }
+    #cp-panel .content::-webkit-scrollbar-thumb {
+      background: #ff00ff;
+      border-radius: 10px;
+    }
+
+    /* FPS boost toggle highlight */
+    #fps-boost-status {
+      font-weight: bold;
+      margin-top: 6px;
+      text-align: center;
+      color: #ff00ff;
+      text-shadow: 0 0 6px #ff00ff;
+    }
+
+    /* Weapon skin editor */
+    #skin-editor {
+      margin-top: 12px;
+      border-top: 1px solid #ff00ff;
+      padding-top: 10px;
+    }
+    #skin-editor label {
+      margin-top: 8px;
+    }
+    #skin-editor input[type=text] {
+      width: 100%;
+      background: #220022;
+      border: 1px solid #ff00ff;
+      color: #ff55ff;
+      font-family: monospace;
+      font-size: 13px;
+      padding: 4px 6px;
+      border-radius: 6px;
+      user-select: text;
+    }
+    #skin-editor button {
+      margin-top: 8px;
+      width: 100%;
+    }
+  `;
+
+  // Append style element
+  const styleEl = createElem('style', {html: cyberpunkCSS});
+  document.head.appendChild(styleEl);
+
+  // ==== STAR BACKGROUND ====
+  // We create a canvas with small white/purple dots that twinkle.
+  // For simplicity, we just overlay a div with CSS radial gradients as in the CSS above.
+  // To add more dynamic stars, we can create a canvas overlay.
+
+  const starsCanvas = createElem('canvas', {id: 'cyberpunk-stars'});
+  document.body.appendChild(starsCanvas);
+  starsCanvas.style.position = 'fixed';
+  starsCanvas.style.top = '0';
+  starsCanvas.style.left = '0';
+  starsCanvas.style.width = '100%';
+  starsCanvas.style.height = '100%';
+  starsCanvas.style.zIndex = '0';
+  starsCanvas.style.pointerEvents = 'none';
+
+  const ctx = starsCanvas.getContext('2d');
+  let stars = [];
+  const maxStars = 150;
+
+  function initStars() {
+    stars = [];
+    for (let i = 0; i < maxStars; i++) {
+      stars.push({
+        x: Math.random() * window.innerWidth,
+        y: Math.random() * window.innerHeight,
+        radius: Math.random() * 1.2 + 0.3,
+        alpha: Math.random(),
+        delta: Math.random() * 0.02 + 0.005,
+        color: `hsl(300, 100%, ${50 + Math.random() * 50}%)`,
+      });
+    }
+  }
+
+  function drawStars() {
+    ctx.clearRect(0, 0, starsCanvas.width, starsCanvas.height);
+    for (const star of stars) {
+      star.alpha += star.delta;
+      if (star.alpha <= 0 || star.alpha >= 1) {
+        star.delta = -star.delta;
+      }
+      ctx.beginPath();
+      ctx.arc(star.x, star.y, star.radius, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 0, 255, ${star.alpha})`;
+      ctx.shadowColor = 'rgba(255, 0, 255, 0.7)';
+      ctx.shadowBlur = 4;
+      ctx.fill();
+    }
+  }
+
+  function resizeCanvas() {
+    starsCanvas.width = window.innerWidth;
+    starsCanvas.height = window.innerHeight;
+  }
+
+  function animateStars() {
+    drawStars();
+    requestAnimationFrame(animateStars);
+  }
+
+  window.addEventListener('resize', () => {
+    resizeCanvas();
+    initStars();
+  });
+
+  resizeCanvas();
+  initStars();
+  animateStars();
+
+  // ==== CUSTOM CROSSHAIR ====
+
+  const crosshairSVG = `
+    <svg width="40" height="40" viewBox="0 0 40 40" >
+      <line x1="20" y1="2" x2="20" y2="12" />
+      <line x1="20" y1="28" x2="20" y2="38" />
+      <line x1="2" y1="20" x2="12" y2="20" />
+      <line x1="28" y1="20" x2="38" y2="20" />
+      <circle cx="20" cy="20" r="4" stroke="#ff00ff" stroke-width="2" fill="none"/>
+    </svg>
+  `;
+  const crosshairDiv = createElem('div', {id: 'custom-crosshair', html: crosshairSVG});
+  document.body.appendChild(crosshairDiv);
+
+  // ==== KILLFEED ====
+
+  // Container to show kill messages
+  const killfeed = createElem('div', {id: 'killfeed-container'});
+  document.body.appendChild(killfeed);
+
+  // Store last killfeed entries (max 10)
+  let killfeedEntries = [];
+
+  function addKillfeedEntry(text) {
+    if (!text) return;
+    killfeedEntries.push(text);
+    if (killfeedEntries.length > 10) killfeedEntries.shift();
+    killfeed.innerHTML = killfeedEntries
+      .map(entry => `<div class="glow-text">${entry}</div>`)
+      .join('');
+  }
+
+  // ==== FPS BOOST FEATURE ====
+
+  // This example disables all animations for FPS boost and hides some effects
+  let fpsBoostEnabled = false;
+  function setFPSBoost(enabled) {
+    fpsBoostEnabled = enabled;
+    if (enabled) {
+      // Disable star animation
+      starsCanvas.style.display = 'none';
+      // Disable glitch animation by removing class on body or relevant elements
+      document.body.classList.add('fps-boost');
+      // Potentially disable other animations here
+    } else {
+      starsCanvas.style.display = 'block';
+      document.body.classList.remove('fps-boost');
+    }
+    updateFPSBoostStatus();
+  }
+
+  function updateFPSBoostStatus() {
+    const statusEl = document.getElementById('fps-boost-status');
+    if (statusEl) {
+      statusEl.textContent = fpsBoostEnabled ? 'FPS Boost: ON' : 'FPS Boost: OFF';
+    }
+  }
+
+  // CSS to disable animations if fps boost is on
+  const fpsBoostCSS = `
+    body.fps-boost * {
+      animation: none !important;
+      transition: none !important;
+      box-shadow: none !important;
+      filter: none !important;
+    }
+  `;
+  const fpsBoostStyle = createElem('style', {html: fpsBoostCSS});
+  document.head.appendChild(fpsBoostStyle);
+
+  // ==== AD BLOCKER ====
+
+  // Very simple example that tries to hide known ad containers or overlays
+  function blockAds() {
+    const adSelectors = [
+      '.ad-container', 
+      '#ad-banner', 
+      '.adsbygoogle',
+      '.ad-frame',
+      'iframe[src*="ads"]',
+      'iframe[src*="doubleclick"]',
+      'iframe[src*="googlesyndication"]',
+    ];
+    adSelectors.forEach(sel => {
+      document.querySelectorAll(sel).forEach(ad => {
+        ad.style.display = 'none';
+      });
+    });
+  }
+
+  // Run ad blocker periodically
+  setInterval(blockAds, 3000);
+
+  // ==== WEAPON SKIN EDITOR ====
+
+  // Weapon skins stored as a simple object {weaponId: skinName}
+  const weaponSkins = {};
+
+  // Simple input for user to type weapon ID and skin name, then apply
+  function applyWeaponSkin(weaponId, skinName) {
+    if (!weaponId) return;
+    weaponSkins[weaponId] = skinName || '';
+    // Apply the skin in the game UI (this part depends on the actual game, so here just simulate)
+    addKillfeedEntry(`Skin applied: ${weaponId} → ${skinName || 'default'}`);
+    // TODO: Connect with actual game UI weapon skin system if possible
+  }
+
+  // ==== CONTROL PANEL ====
+
+  // Draggable panel for toggles & inputs
+
+  const panel = createElem('div', {id: 'cp-panel'});
+  const header = createElem('header', {}, 'Cyberpunk Theme Control Panel');
+  const content = createElem('div', {class: 'content'});
+
+  // Add header and content to panel
+  panel.appendChild(header);
+  panel.appendChild(content);
+  document.body.appendChild(panel);
+
+  // Draggable logic for panel
+  (() => {
+    let isDragging = false;
+    let dragStartX, dragStartY, origX, origY;
+
+    header.style.cursor = 'move';
+
+    header.addEventListener('mousedown', e => {
+      isDragging = true;
+      dragStartX = e.clientX;
+      dragStartY = e.clientY;
+      const rect = panel.getBoundingClientRect();
+      origX = rect.left;
+      origY = rect.top;
+      e.preventDefault();
+    });
+    window.addEventListener('mouseup', () => {
+      isDragging = false;
+    });
+    window.addEventListener('mousemove', e => {
+      if (!isDragging) return;
+      let newX = origX + (e.clientX - dragStartX);
+      let newY = origY + (e.clientY - dragStartY);
+      // Clamp to viewport
+      newX = Math.max(0, Math.min(window.innerWidth - panel.offsetWidth, newX));
+      newY = Math.max(0, Math.min(window.innerHeight - panel.offsetHeight, newY));
+      panel.style.left = newX + 'px';
+      panel.style.top = newY + 'px';
+    });
+  })();
+
+  // Build content controls
+
+  // Crosshair toggle
+  const crosshairCheckbox = createElem('input', {type: 'checkbox', id: 'toggle-crosshair', checked: true});
+  const crosshairLabel = createElem('label', {for: 'toggle-crosshair'}, 'Show Custom Crosshair');
+  content.appendChild(crosshairLabel);
+  crosshairLabel.insertBefore(crosshairCheckbox, crosshairLabel.firstChild);
+
+  crosshairCheckbox.addEventListener('change', e => {
+    crosshairDiv.style.display = e.target.checked ? 'block' : 'none';
+  });
+
+  // Killfeed toggle
+  const killfeedCheckbox = createElem('input', {type: 'checkbox', id: 'toggle-killfeed', checked: true});
+  const killfeedLabel = createElem('label', {for: 'toggle-killfeed'}, 'Show Killfeed');
+  content.appendChild(killfeedLabel);
+  killfeedLabel.insertBefore(killfeedCheckbox, killfeedLabel.firstChild);
+
+  killfeedCheckbox.addEventListener('change', e => {
+    killfeed.style.display = e.target.checked ? 'block' : 'none';
+  });
+
+  // FPS boost toggle
+  const fpsCheckbox = createElem('input', {type: 'checkbox', id: 'toggle-fps-boost'});
+  const fpsLabel = createElem('label', {for: 'toggle-fps-boost'}, 'Enable FPS Boost');
+  content.appendChild(fpsLabel);
+  fpsLabel.insertBefore(fpsCheckbox, fpsLabel.firstChild);
+
+  const fpsStatus = createElem('div', {id: 'fps-boost-status'}, 'FPS Boost: OFF');
+  content.appendChild(fpsStatus);
+
+  fpsCheckbox.addEventListener('change', e => {
+    setFPSBoost(e.target.checked);
+  });
+
+  // Adblock toggle
+  const adblockCheckbox = createElem('input', {type: 'checkbox', id: 'toggle-adblock', checked: true});
+  const adblockLabel = createElem('label', {for: 'toggle-adblock'}, 'Enable Ad Blocker');
+  content.appendChild(adblockLabel);
+  adblockLabel.insertBefore(adblockCheckbox, adblockLabel.firstChild);
+
+  adblockCheckbox.addEventListener('change', e => {
+    if (e.target.checked) {
+      blockAds();
+      if (!adblockInterval) {
+        adblockInterval = setInterval(blockAds, 3000);
+      }
+    } else {
+      clearInterval(adblockInterval);
+      adblockInterval = null;
+    }
+  });
+
+  let adblockInterval = setInterval(blockAds, 3000);
+
+  // Weapon skin editor UI
+  const skinEditorDiv = createElem('div', {id: 'skin-editor'});
+  content.appendChild(skinEditorDiv);
+
+  skinEditorDiv.appendChild(createElem('label', {for: 'weapon-id-input'}, 'Weapon ID:'));
+  const weaponIdInput = createElem('input', {type: 'text', id: 'weapon-id-input', placeholder: 'e.g. shotgun'});
+  skinEditorDiv.appendChild(weaponIdInput);
+
+  skinEditorDiv.appendChild(createElem('label', {for: 'skin-name-input'}, 'Skin Name:'));
+  const skinNameInput = createElem('input', {type: 'text', id: 'skin-name-input', placeholder: 'e.g. neon-pink'});
+  skinEditorDiv.appendChild(skinNameInput);
+
+  const applySkinBtn = createElem('button', {}, 'Apply Skin');
+  skinEditorDiv.appendChild(applySkinBtn);
+
+  applySkinBtn.addEventListener('click', () => {
+    const wid = weaponIdInput.value.trim().toLowerCase();
+    const skin = skinNameInput.value.trim();
+    if (!wid) {
+      alert('Please enter a Weapon ID');
+      return;
+    }
+    applyWeaponSkin(wid, skin);
+  });
+
+  // ==== SIMULATED KILLFEED UPDATES (for demo/testing) ====
+
+  // This simulates kills messages appearing every few seconds
+  const demoNames = ['PlayerX', 'CyberNinja', 'Glitcher', 'Neo', 'Shadow', 'Flux', 'Byte', 'Zero'];
+  const demoWeapons = ['shotgun', 'sniper', 'pistol', 'rifle', 'knife'];
+
+  function randomChoice(arr) {
+    return arr[Math.floor(Math.random() * arr.length)];
+  }
+
+  function simulateKillfeed() {
+    const killer = randomChoice(demoNames);
+    const victim = randomChoice(demoNames.filter(n => n !== killer));
+    const weapon = randomChoice(demoWeapons);
+    const msg = `${killer} eliminated ${victim} with ${weapon}`;
+    addKillfeedEntry(msg);
+  }
+
+  setInterval(simulateKillfeed, 7000);
+
+  // ==== INITIAL SETTINGS ====
+
+  // Show crosshair and killfeed initially
+  crosshairDiv.style.display = 'block';
+  killfeed.style.display = 'block';
+
+  // Initialize FPS boost off
+  setFPSBoost(false);
+
+  // Initialize adblock on
+  blockAds();
+
+})();
