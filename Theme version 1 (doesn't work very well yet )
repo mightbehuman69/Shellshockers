@@ -1,0 +1,708 @@
+// ==UserScript==
+// @name         Shell Shockers Ultimate Customizer v2
+// @namespace    http://tampermonkey.net/
+// @version      2.0
+// @description  Full-featured cyberpunk/glitch theme + advanced skin editor + UI improvements for Shell Shockers
+// @author       ChatGPT
+// @match        https://shellshock.io/*
+// @grant        none
+// ==/UserScript==
+
+(function() {
+  "use strict";
+
+  // Utility to create elements
+  function createElem(tag, options = {}, text) {
+    const el = document.createElement(tag);
+    Object.entries(options).forEach(([k, v]) => {
+      if (k === "style") Object.assign(el.style, v);
+      else if (k === "dataset") Object.assign(el.dataset, v);
+      else if (k in el) el[k] = v;
+      else el.setAttribute(k, v);
+    });
+    if (text) el.textContent = text;
+    return el;
+  }
+
+  // Default state
+  const defaultState = {
+    theme: "cyberpunk",
+    hueShift: 270,
+    saturation: 120,
+    particleBg: true,
+    selectedCrosshair: "dot",
+    crosshairSize: 24,
+    crosshairOpacity: 0.85,
+    killfeedColor: "#FF33AA",
+    killfeedFontSize: 18,
+    killfeedFont: "Arial",
+    killfeedShow: true,
+    fpsShow: true,
+    fpsBoost: false,
+    showCursor: false,
+    weaponSkins: {
+      "Revolver": "#ff0044",
+      "Rifle": "#44ff00",
+      "Shotgun": "#0044ff",
+      "Sniper": "#ffbb00",
+      "Machine Gun": "#00ffbb"
+    },
+  };
+
+  // Clone to state
+  let state = JSON.parse(JSON.stringify(defaultState));
+
+  // Load saved settings from localStorage
+  function loadSettings() {
+    try {
+      const saved = JSON.parse(localStorage.getItem("__shellCustomizerSettings"));
+      if (saved) {
+        state = Object.assign(state, saved);
+      }
+    } catch(e) {
+      console.warn("Failed to load settings", e);
+    }
+  }
+
+  // Save settings to localStorage
+  function saveSettings() {
+    localStorage.setItem("__shellCustomizerSettings", JSON.stringify(state));
+  }
+
+  // Apply CSS theme
+  function updateStyles() {
+    let css = `
+      /* Base cyberpunk theme */
+      body, html {
+        filter: hue-rotate(${state.hueShift}deg) saturate(${state.saturation}%);
+        background: #0c002b !important;
+        color: #f0c0ff !important;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      }
+      /* Buttons */
+      button, select, input[type="range"], input[type="color"], input[type="number"] {
+        background: #220044;
+        border: 1px solid #aa00ff;
+        border-radius: 6px;
+        color: #ff99ff;
+        padding: 4px 8px;
+        font-weight: 600;
+        transition: background 0.3s ease;
+        user-select: none;
+      }
+      button:hover, select:hover, input[type="range"]:hover {
+        background: #440077;
+        cursor: pointer;
+      }
+      /* Panel styling */
+      #shellCustomizerPanel {
+        background: rgba(20, 0, 40, 0.95);
+        border: 2px solid #bb00ff;
+        border-radius: 12px;
+        box-shadow: 0 0 15px #bb00ffaa;
+        width: 320px;
+        color: #ff99ff;
+        font-size: 14px;
+        padding: 8px;
+        position: fixed;
+        top: 60px;
+        right: 20px;
+        z-index: 9999999;
+        user-select: none;
+        display: flex;
+        flex-direction: column;
+      }
+      #shellCustomizerPanel.hidden {
+        display: none;
+      }
+      #shellCustomizerPanel h2 {
+        margin: 0;
+        cursor: grab;
+        background: linear-gradient(90deg, #ff00ff, #6600cc);
+        padding: 6px 10px;
+        border-radius: 8px;
+        font-weight: 900;
+        text-align: center;
+      }
+      #shellCustomizerPanel h3 {
+        margin-top: 12px;
+        margin-bottom: 6px;
+        border-bottom: 1px solid #bb00ff;
+        padding-bottom: 4px;
+      }
+      label {
+        margin-top: 8px;
+        display: block;
+        font-weight: 700;
+        user-select: text;
+      }
+      input[type="checkbox"] {
+        margin-left: 6px;
+        transform: scale(1.2);
+        vertical-align: middle;
+        cursor: pointer;
+      }
+      .weapon-skin-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 6px;
+      }
+      .weapon-skin-row label {
+        flex: 1;
+      }
+      .weapon-skin-row input[type="color"] {
+        flex-shrink: 0;
+        cursor: pointer;
+      }
+      /* Crosshair */
+      #customCrosshair {
+        position: fixed;
+        pointer-events: none;
+        z-index: 99999999;
+        top: 50%;
+        left: 50%;
+        user-select: none;
+        mix-blend-mode: screen;
+      }
+      /* FPS Counter */
+      #fpsCounter {
+        position: fixed;
+        bottom: 12px;
+        left: 12px;
+        background: rgba(0, 0, 0, 0.6);
+        color: #bb00ff;
+        font-weight: 900;
+        font-family: monospace;
+        font-size: 18px;
+        padding: 4px 10px;
+        border-radius: 8px;
+        user-select: none;
+        pointer-events: none;
+        z-index: 99999999;
+      }
+      /* Killfeed override */
+      #killFeed {
+        color: ${state.killfeedColor} !important;
+        font-size: ${state.killfeedFontSize}px !important;
+        font-family: ${state.killfeedFont}, sans-serif !important;
+        display: ${state.killfeedShow ? "block" : "none"} !important;
+      }
+      /* Randomize theme button */
+      #randomThemeBtn {
+        margin-top: 10px;
+        background: linear-gradient(90deg, #ff00ff, #00ffff);
+        font-weight: 800;
+      }
+      /* Advanced skin editor */
+      .skin-preview {
+        width: 40px;
+        height: 40px;
+        border-radius: 6px;
+        border: 2px solid #bb00ff;
+        box-shadow: 0 0 8px #bb00ffaa;
+        margin-left: 8px;
+        user-select: none;
+      }
+      .skin-editor-row {
+        display: flex;
+        align-items: center;
+        margin-top: 8px;
+      }
+      .skin-editor-row button {
+        margin-left: 6px;
+        background: #660099;
+        border: none;
+        border-radius: 6px;
+        color: #ff99ff;
+        font-weight: 700;
+        padding: 4px 8px;
+        cursor: pointer;
+        user-select: none;
+      }
+      .skin-editor-row button:hover {
+        background: #bb00ff;
+      }
+    `;
+
+    // Inject or update style tag
+    let styleTag = document.getElementById("shellCustomizerStyles");
+    if (!styleTag) {
+      styleTag = createElem("style", { id: "shellCustomizerStyles" });
+      document.head.appendChild(styleTag);
+    }
+    styleTag.textContent = css;
+  }
+
+  // Crosshair rendering
+  let crosshairEl = document.getElementById("customCrosshair");
+  if (!crosshairEl) {
+    crosshairEl = createElem("div", { id: "customCrosshair" });
+    document.body.appendChild(crosshairEl);
+  }
+
+  const crosshairs = {
+    dot: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ff33cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/></svg>`,
+    cross: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ff33cc" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="12" x2="20" y2="12"/><line x1="12" y1="4" x2="12" y2="20"/></svg>`,
+    circle: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ff33cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg>`,
+    square: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ff33cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16"/></svg>`,
+  };
+
+  function updateCrosshair() {
+    crosshairEl.innerHTML = crosshairs[state.selectedCrosshair] || crosshairs.dot;
+    crosshairEl.style.width = `${state.crosshairSize}px`;
+    crosshairEl.style.height = `${state.crosshairSize}px`;
+    crosshairEl.style.marginLeft = `-${state.crosshairSize / 2}px`;
+    crosshairEl.style.marginTop = `-${state.crosshairSize / 2}px`;
+    crosshairEl.style.opacity = state.crosshairOpacity;
+    crosshairEl.style.display = state.selectedCrosshair === "none" ? "none" : "block";
+  }
+
+  // FPS counter setup
+  let fpsCounterEl = document.getElementById("fpsCounter");
+  if (!fpsCounterEl) {
+    fpsCounterEl = createElem("div", { id: "fpsCounter" }, "FPS: --");
+    document.body.appendChild(fpsCounterEl);
+  }
+
+  let lastFrameTime = performance.now();
+  let frameCount = 0;
+  let fps = 0;
+  function fpsLoop() {
+    const now = performance.now();
+    frameCount++;
+    if (now - lastFrameTime >= 1000) {
+      fps = frameCount;
+      fpsCounterEl.textContent = `FPS: ${fps}`;
+      frameCount = 0;
+      lastFrameTime = now;
+    }
+    fpsCounterEl.style.display = state.fpsShow ? "block" : "none";
+    requestAnimationFrame(fpsLoop);
+  }
+  fpsLoop();
+
+  // Particle background (basic purple neon dots)
+  let particleCanvas = document.getElementById("particleBgCanvas");
+  let ctx;
+  let particles = [];
+  const particleCount = 70;
+
+  function createParticles() {
+    particles = [];
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    for (let i = 0; i < particleCount; i++) {
+      particles.push({
+        x: Math.random() * w,
+        y: Math.random() * h,
+        radius: Math.random() * 2 + 1,
+        vx: (Math.random() - 0.5) * 0.3,
+        vy: (Math.random() - 0.5) * 0.3,
+      });
+    }
+  }
+
+  function setupCanvas() {
+    if (!particleCanvas) {
+      particleCanvas = createElem("canvas", { id: "particleBgCanvas" });
+      particleCanvas.style.position = "fixed";
+      particleCanvas.style.top = 0;
+      particleCanvas.style.left = 0;
+      particleCanvas.style.width = "100%";
+      particleCanvas.style.height = "100%";
+      particleCanvas.style.pointerEvents = "none";
+      particleCanvas.style.zIndex = 0;
+      document.body.appendChild(particleCanvas);
+    }
+    particleCanvas.width = window.innerWidth;
+    particleCanvas.height = window.innerHeight;
+    ctx = particleCanvas.getContext("2d");
+  }
+
+  function drawParticles() {
+    if (!state.particleBg) {
+      if (particleCanvas) particleCanvas.style.display = "none";
+      return;
+    }
+    if (particleCanvas) particleCanvas.style.display = "block";
+    ctx.clearRect(0, 0, particleCanvas.width, particleCanvas.height);
+    for (const p of particles) {
+      p.x += p.vx;
+      p.y += p.vy;
+      if (p.x < 0 || p.x > particleCanvas.width) p.vx *= -1;
+      if (p.y < 0 || p.y > particleCanvas.height) p.vy *= -1;
+      const gradient = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.radius * 3);
+      gradient.addColorStop(0, "rgba(255,0,255,0.9)");
+      gradient.addColorStop(1, "rgba(255,0,255,0)");
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.radius * 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    requestAnimationFrame(drawParticles);
+  }
+
+  window.addEventListener("resize", () => {
+    if (particleCanvas) {
+      particleCanvas.width = window.innerWidth;
+      particleCanvas.height = window.innerHeight;
+    }
+  });
+
+  // Control panel UI
+  let panel = document.getElementById("shellCustomizerPanel");
+  if (!panel) {
+    panel = createElem("div", { id: "shellCustomizerPanel" });
+    document.body.appendChild(panel);
+  }
+
+  // Create header with open/close toggle & draggable only by header
+  const header = createElem("h2", {}, "Shell Shockers Customizer");
+  const toggleBtn = createElem("button", { id: "panelToggleBtn", type: "button", title: "Open/Close Panel" }, "❌");
+  toggleBtn.style.position = "absolute";
+  toggleBtn.style.top = "4px";
+  toggleBtn.style.right = "8px";
+  toggleBtn.style.background = "transparent";
+  toggleBtn.style.border = "none";
+  toggleBtn.style.color = "#ff55ff";
+  toggleBtn.style.fontSize = "18px";
+  toggleBtn.style.cursor = "pointer";
+  toggleBtn.style.userSelect = "none";
+
+  header.style.position = "relative";
+  header.appendChild(toggleBtn);
+  panel.appendChild(header);
+
+  // Dragging setup (only header draggable)
+  let dragData = { active: false, offsetX: 0, offsetY: 0 };
+  header.style.cursor = "grab";
+
+  header.addEventListener("mousedown", e => {
+    dragData.active = true;
+    dragData.offsetX = e.clientX - panel.offsetLeft;
+    dragData.offsetY = e.clientY - panel.offsetTop;
+    header.style.cursor = "grabbing";
+  });
+  document.addEventListener("mouseup", () => {
+    dragData.active = false;
+    header.style.cursor = "grab";
+  });
+  document.addEventListener("mousemove", e => {
+    if (!dragData.active) return;
+    let newX = e.clientX - dragData.offsetX;
+    let newY = e.clientY - dragData.offsetY;
+    // Clamp to viewport
+    newX = Math.min(window.innerWidth - panel.offsetWidth, Math.max(0, newX));
+    newY = Math.min(window.innerHeight - panel.offsetHeight, Math.max(0, newY));
+    panel.style.left = newX + "px";
+    panel.style.top = newY + "px";
+    panel.style.right = "auto";
+  });
+
+  // Sections container
+  const sectionsContainer = createElem("div", { id: "sectionsContainer" });
+  panel.appendChild(sectionsContainer);
+
+  // Clear and rebuild sections UI
+  function buildUI() {
+    sectionsContainer.innerHTML = "";
+
+    // Theme selector
+    const themeLabel = createElem("label", {}, "Theme:");
+    const themeSelect = createElem("select", { id: "themeSelect" });
+    ["cyberpunk", "neon", "glitch", "dark"].forEach(t => {
+      const opt = createElem("option", { value: t }, t.charAt(0).toUpperCase() + t.slice(1));
+      if (t === state.theme) opt.selected = true;
+      themeSelect.appendChild(opt);
+    });
+    sectionsContainer.appendChild(themeLabel);
+    sectionsContainer.appendChild(themeSelect);
+
+    // Hue shift
+    const hueLabel = createElem("label", {}, "Hue Shift:");
+    const hueRange = createElem("input", { type: "range", min: 0, max: 360, value: state.hueShift, id: "hueRange" });
+    sectionsContainer.appendChild(hueLabel);
+    sectionsContainer.appendChild(hueRange);
+
+    // Saturation
+    const satLabel = createElem("label", {}, "Saturation (%):");
+    const satRange = createElem("input", { type: "range", min: 50, max: 200, value: state.saturation, id: "satRange" });
+    sectionsContainer.appendChild(satLabel);
+    sectionsContainer.appendChild(satRange);
+
+    // Particle bg toggle
+    const particleLabel = createElem("label", {}, "Enable Particle Background:");
+    const particleCheckbox = createElem("input", { type: "checkbox", checked: state.particleBg, id: "particleCheckbox" });
+    particleLabel.appendChild(particleCheckbox);
+    sectionsContainer.appendChild(particleLabel);
+
+    // Crosshair selector
+    const crosshairLabel = createElem("label", {}, "Crosshair Style:");
+    const crosshairSelect = createElem("select", { id: "crosshairSelect" });
+    Object.keys(crosshairs).forEach(ch => {
+      const opt = createElem("option", { value: ch }, ch.charAt(0).toUpperCase() + ch.slice(1));
+      if (ch === state.selectedCrosshair) opt.selected = true;
+      crosshairSelect.appendChild(opt);
+    });
+    sectionsContainer.appendChild(crosshairLabel);
+    sectionsContainer.appendChild(crosshairSelect);
+
+    // Crosshair size
+    const chSizeLabel = createElem("label", {}, "Crosshair Size:");
+    const chSizeRange = createElem("input", { type: "range", min: 10, max: 80, value: state.crosshairSize, id: "crosshairSize" });
+    sectionsContainer.appendChild(chSizeLabel);
+    sectionsContainer.appendChild(chSizeRange);
+
+    // Crosshair opacity
+    const chOpacityLabel = createElem("label", {}, "Crosshair Opacity:");
+    const chOpacityRange = createElem("input", { type: "range", min: 0.1, max: 1, step: 0.05, value: state.crosshairOpacity, id: "crosshairOpacity" });
+    sectionsContainer.appendChild(chOpacityLabel);
+    sectionsContainer.appendChild(chOpacityRange);
+
+    // Killfeed color
+    const killfeedColorLabel = createElem("label", {}, "Killfeed Color:");
+    const killfeedColorInput = createElem("input", { type: "color", value: state.killfeedColor, id: "killfeedColor" });
+    sectionsContainer.appendChild(killfeedColorLabel);
+    sectionsContainer.appendChild(killfeedColorInput);
+
+    // Killfeed font selector
+    const killfeedFontLabel = createElem("label", {}, "Killfeed Font:");
+    const killfeedFontSelect = createElem("select", { id: "killfeedFont" });
+    ["Arial", "Verdana", "Tahoma", "Courier New", "Impact", "Comic Sans MS", "Georgia"].forEach(f => {
+      const opt = createElem("option", { value: f }, f);
+      if (f === state.killfeedFont) opt.selected = true;
+      killfeedFontSelect.appendChild(opt);
+    });
+    sectionsContainer.appendChild(killfeedFontLabel);
+    sectionsContainer.appendChild(killfeedFontSelect);
+
+    // Killfeed font size
+    const killfeedFontSizeLabel = createElem("label", {}, "Killfeed Font Size:");
+    const killfeedFontSizeInput = createElem("input", { type: "number", min: 10, max: 36, value: state.killfeedFontSize, id: "killfeedFontSize" });
+    sectionsContainer.appendChild(killfeedFontSizeLabel);
+    sectionsContainer.appendChild(killfeedFontSizeInput);
+
+    // Killfeed show toggle
+    const killfeedShowLabel = createElem("label", {}, "Show Killfeed:");
+    const killfeedShowCheckbox = createElem("input", { type: "checkbox", checked: state.killfeedShow, id: "killfeedShow" });
+    killfeedShowLabel.appendChild(killfeedShowCheckbox);
+    sectionsContainer.appendChild(killfeedShowLabel);
+
+    // FPS counter toggle
+    const fpsShowLabel = createElem("label", {}, "Show FPS Counter:");
+    const fpsShowCheckbox = createElem("input", { type: "checkbox", checked: state.fpsShow, id: "fpsShow" });
+    fpsShowLabel.appendChild(fpsShowCheckbox);
+    sectionsContainer.appendChild(fpsShowLabel);
+
+    // FPS boost toggle (dummy, could hook into real FPS boost later)
+    const fpsBoostLabel = createElem("label", {}, "Enable FPS Boost:");
+    const fpsBoostCheckbox = createElem("input", { type: "checkbox", checked: state.fpsBoost, id: "fpsBoost" });
+    fpsBoostLabel.appendChild(fpsBoostCheckbox);
+    sectionsContainer.appendChild(fpsBoostLabel);
+
+    // Show cursor toggle
+    const showCursorLabel = createElem("label", {}, "Show Cursor:");
+    const showCursorCheckbox = createElem("input", { type: "checkbox", checked: state.showCursor, id: "showCursor" });
+    showCursorLabel.appendChild(showCursorCheckbox);
+    sectionsContainer.appendChild(showCursorLabel);
+
+    // Weapon skin editor (advanced)
+    const skinEditorHeader = createElem("h3", {}, "Weapon Skin Editor");
+    sectionsContainer.appendChild(skinEditorHeader);
+
+    Object.entries(state.weaponSkins).forEach(([weapon, color]) => {
+      const row = createElem("div", { className: "skin-editor-row" });
+
+      const label = createElem("label", {}, weapon);
+      label.style.flex = "1";
+
+      const colorInput = createElem("input", { type: "color", value: color, "data-weapon": weapon, className: "weaponColorInput" });
+
+      const preview = createElem("div", { className: "skin-preview", "data-weapon": weapon });
+      preview.style.backgroundColor = color;
+
+      const resetBtn = createElem("button", { "data-weapon": weapon, className: "resetSkinBtn" }, "Reset");
+
+      row.appendChild(label);
+      row.appendChild(colorInput);
+      row.appendChild(preview);
+      row.appendChild(resetBtn);
+
+      sectionsContainer.appendChild(row);
+    });
+
+    // Randomize theme button
+    const randomThemeBtn = createElem("button", { id: "randomThemeBtn" }, "Randomize Theme");
+    sectionsContainer.appendChild(randomThemeBtn);
+
+    // Attach event listeners now that elements exist
+
+    themeSelect.addEventListener("change", e => {
+      state.theme = e.target.value;
+      applyThemePreset(state.theme);
+      saveSettings();
+      updateStyles();
+    });
+
+    hueRange.addEventListener("input", e => {
+      state.hueShift = parseInt(e.target.value);
+      saveSettings();
+      updateStyles();
+    });
+
+    satRange.addEventListener("input", e => {
+      state.saturation = parseInt(e.target.value);
+      saveSettings();
+      updateStyles();
+    });
+
+    particleCheckbox.addEventListener("change", e => {
+      state.particleBg = e.target.checked;
+      saveSettings();
+      if (state.particleBg) {
+        if (!particles.length) createParticles();
+        setupCanvas();
+        drawParticles();
+      } else {
+        if (particleCanvas) particleCanvas.style.display = "none";
+      }
+    });
+
+    crosshairSelect.addEventListener("change", e => {
+      state.selectedCrosshair = e.target.value;
+      saveSettings();
+      updateStyles();
+    });
+
+    chSizeRange.addEventListener("input", e => {
+      state.crosshairSize = parseInt(e.target.value);
+      saveSettings();
+      updateStyles();
+    });
+
+    chOpacityRange.addEventListener("input", e => {
+      state.crosshairOpacity = parseFloat(e.target.value);
+      saveSettings();
+      updateStyles();
+    });
+
+    killfeedColorInput.addEventListener("input", e => {
+      state.killfeedColor = e.target.value;
+      saveSettings();
+      updateStyles();
+    });
+
+    killfeedFontSelect.addEventListener("change", e => {
+      state.killfeedFont = e.target.value;
+      saveSettings();
+      updateStyles();
+    });
+
+    killfeedFontSizeInput.addEventListener("input", e => {
+      state.killfeedFontSize = parseInt(e.target.value);
+      saveSettings();
+      updateStyles();
+    });
+
+    killfeedShowCheckbox.addEventListener("change", e => {
+      state.killfeedShow = e.target.checked;
+      saveSettings();
+      updateStyles();
+    });
+
+    fpsShowCheckbox.addEventListener("change", e => {
+      state.fpsShow = e.target.checked;
+      saveSettings();
+      updateStyles();
+    });
+
+    fpsBoostCheckbox.addEventListener("change", e => {
+      state.fpsBoost = e.target.checked;
+      saveSettings();
+      // FPS boost feature can be implemented here
+    });
+
+    showCursorCheckbox.addEventListener("change", e => {
+      state.showCursor = e.target.checked;
+      saveSettings();
+      updateStyles();
+    });
+
+    // Weapon skin color input
+    const weaponColorInputs = document.querySelectorAll(".weaponColorInput");
+    weaponColorInputs.forEach(input => {
+      input.addEventListener("input", e => {
+        const weapon = e.target.dataset.weapon;
+        state.weaponSkins[weapon] = e.target.value;
+        saveSettings();
+        updateStyles();
+        // Update preview color
+        const preview = document.querySelector(`.skin-preview[data-weapon="${weapon}"]`);
+        if (preview) preview.style.backgroundColor = e.target.value;
+      });
+    });
+
+    // Reset skin buttons
+    const resetButtons = document.querySelectorAll(".resetSkinBtn");
+    resetButtons.forEach(btn => {
+      btn.addEventListener("click", e => {
+        const weapon = e.target.dataset.weapon;
+        if (weapon && defaultWeaponSkins[weapon]) {
+          state.weaponSkins[weapon] = defaultWeaponSkins[weapon];
+          saveSettings();
+          updateStyles();
+          // Update inputs and preview
+          const colorInput = document.querySelector(`.weaponColorInput[data-weapon="${weapon}"]`);
+          if (colorInput) colorInput.value = defaultWeaponSkins[weapon];
+          const preview = document.querySelector(`.skin-preview[data-weapon="${weapon}"]`);
+          if (preview) preview.style.backgroundColor = defaultWeaponSkins[weapon];
+        }
+      });
+    });
+
+    // Randomize theme button click
+    randomThemeBtn.addEventListener("click", () => {
+      const themes = ["cyberpunk", "neon", "glitch", "dark"];
+      const randomTheme = themes[Math.floor(Math.random() * themes.length)];
+      state.theme = randomTheme;
+      applyThemePreset(randomTheme);
+      saveSettings();
+      updateStyles();
+      buildUI(); // rebuild to reflect changes
+    });
+  }
+
+  buildUI();
+
+  // Toggle panel open/close on button click
+  toggleBtn.addEventListener("click", () => {
+    if (sectionsContainer.style.display === "none") {
+      sectionsContainer.style.display = "block";
+      toggleBtn.textContent = "❌";
+    } else {
+      sectionsContainer.style.display = "none";
+      toggleBtn.textContent = "⚙️";
+    }
+  });
+
+  // Position panel initially
+  panel.style.position = "fixed";
+  panel.style.top = "40px";
+  panel.style.left = "40px";
+  panel.style.width = "350px";
+  panel.style.maxHeight = "80vh";
+  panel.style.overflowY = "auto";
+  panel.style.backgroundColor = "rgba(20,0,30,0.95)";
+  panel.style.border = "2px solid #ff00ff";
+  panel.style.borderRadius = "10px";
+  panel.style.color = "#ff55ff";
+  panel.style.zIndex = "999999";
+  panel.style.fontFamily = "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif";
+  panel.style.userSelect = "none";
+  panel.style.padding = "10px";
+
+  // Initial styles update
+  updateStyles();
+
+})();  
