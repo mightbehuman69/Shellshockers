@@ -3,6 +3,6 @@ An epic shellshockers neon theme with plenty of accessibility options, and custo
 
 # Theme Version 1
 
-# Theme Version 2
+# Theme Fully Working
 
 # Hack
