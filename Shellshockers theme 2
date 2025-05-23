@@ -1,0 +1,403 @@
+(function() {
+  // Helper to create elements easily
+  function createElem(tag, attrs = {}, text = "") {
+    const el = document.createElement(tag);
+    for (const [key, value] of Object.entries(attrs)) {
+      if (key === "style" && typeof value === "object") {
+        Object.assign(el.style, value);
+      } else if (key.startsWith("on") && typeof value === "function") {
+        el.addEventListener(key.substring(2), value);
+      } else if (key === "checked") {
+        el.checked = value;
+      } else if (key === "value") {
+        el.value = value;
+      } else {
+        el.setAttribute(key, value);
+      }
+    }
+    if (text) el.textContent = text;
+    return el;
+  }
+
+  // State for all settings
+  const state = {
+    hueShift: 0,
+    saturation: 100,
+    particleBg: false,
+    selectedCrosshair: "default",
+    crosshairSize: 40,
+    crosshairOpacity: 1,
+    crosshairColor: "#ff00ff",
+    crosshairThickness: 2,
+    fpsShow: true,
+    fpsBoost: false,
+  };
+
+  // Define crosshair draw functions per style
+  const crosshairs = {
+    default: drawDefaultCrosshair,
+    dot: drawDotCrosshair,
+    cross: drawCrossCrosshair,
+    circle: drawCircleCrosshair,
+  };
+
+  // Create or get crosshair canvas overlay
+  let crosshairCanvas = document.getElementById("crosshairCanvas");
+  if (!crosshairCanvas) {
+    crosshairCanvas = document.createElement("canvas");
+    crosshairCanvas.id = "crosshairCanvas";
+    crosshairCanvas.style.position = "fixed";
+    crosshairCanvas.style.pointerEvents = "none";
+    crosshairCanvas.style.top = "0";
+    crosshairCanvas.style.left = "0";
+    crosshairCanvas.style.zIndex = "9999999";
+    document.body.appendChild(crosshairCanvas);
+  }
+  const ctx = crosshairCanvas.getContext("2d");
+
+  function resizeCanvas() {
+    crosshairCanvas.width = window.innerWidth;
+    crosshairCanvas.height = window.innerHeight;
+  }
+  window.addEventListener("resize", resizeCanvas);
+  resizeCanvas();
+
+  // Draw crosshairs functions
+  function drawDefaultCrosshair(ctx, x, y, size, color, thickness, opacity) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = thickness;
+    ctx.globalAlpha = opacity;
+    const half = size / 2;
+
+    ctx.beginPath();
+    ctx.moveTo(x - half, y);
+    ctx.lineTo(x + half, y);
+    ctx.moveTo(x, y - half);
+    ctx.lineTo(x, y + half);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  function drawDotCrosshair(ctx, x, y, size, color, thickness, opacity) {
+    ctx.fillStyle = color;
+    ctx.globalAlpha = opacity;
+    ctx.beginPath();
+    ctx.arc(x, y, size / 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  function drawCrossCrosshair(ctx, x, y, size, color, thickness, opacity) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = thickness;
+    ctx.globalAlpha = opacity;
+    const gap = size / 4;
+    const half = size / 2;
+
+    ctx.beginPath();
+    // Horizontal left
+    ctx.moveTo(x - half, y);
+    ctx.lineTo(x - gap, y);
+    // Horizontal right
+    ctx.moveTo(x + gap, y);
+    ctx.lineTo(x + half, y);
+    // Vertical top
+    ctx.moveTo(x, y - half);
+    ctx.lineTo(x, y - gap);
+    // Vertical bottom
+    ctx.moveTo(x, y + gap);
+    ctx.lineTo(x, y + half);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  function drawCircleCrosshair(ctx, x, y, size, color, thickness, opacity) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = thickness;
+    ctx.globalAlpha = opacity;
+    ctx.beginPath();
+    ctx.arc(x, y, size / 2, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  // Crosshair render loop
+  function renderCrosshair() {
+    ctx.clearRect(0, 0, crosshairCanvas.width, crosshairCanvas.height);
+    if (!state.selectedCrosshair) return;
+
+    const centerX = window.innerWidth / 2;
+    const centerY = window.innerHeight / 2;
+
+    const drawFn = crosshairs[state.selectedCrosshair] || crosshairs["default"];
+    drawFn(ctx, centerX, centerY, state.crosshairSize, state.crosshairColor, state.crosshairThickness, state.crosshairOpacity);
+
+    requestAnimationFrame(renderCrosshair);
+  }
+  renderCrosshair();
+
+  // Save/load from localStorage
+  function saveSettings() {
+    localStorage.setItem("customizerSettings", JSON.stringify(state));
+  }
+  function loadSettings() {
+    const saved = localStorage.getItem("customizerSettings");
+    if (saved) {
+      Object.assign(state, JSON.parse(saved));
+    }
+  }
+
+  // Update styles according to state
+  function updateStyles() {
+    document.body.style.filter = `hue-rotate(${state.hueShift}deg) saturate(${state.saturation}%)`;
+    // Particle background and FPS logic placeholders
+    // These would need your existing implementations plugged here
+  }
+
+  // Create panel and toggle button
+  const panel = createElem("div", { id: "customizerPanel" });
+  const toggleBtn = createElem("button", { id: "toggleCustomizer", title: "Open Customizer Panel" }, "⚙️");
+  document.body.appendChild(toggleBtn);
+  document.body.appendChild(panel);
+
+  const sectionsContainer = createElem("div", { id: "sectionsContainer" });
+  panel.appendChild(sectionsContainer);
+
+  function buildUI() {
+    sectionsContainer.innerHTML = "";
+
+    function createLabelInput(labelText, inputElem) {
+      const container = createElem("div", { style: { marginBottom: "10px", display: "flex", flexDirection: "column" } });
+      const label = createElem("label", { style: { marginBottom: "3px", fontWeight: "600", color: "#ff77ff" } }, labelText);
+      container.appendChild(label);
+      container.appendChild(inputElem);
+      return container;
+    }
+
+    // --- Existing Controls ---
+
+    // Hue shift
+    const hueRange = createElem("input", { type: "range", min: 0, max: 360, value: state.hueShift, id: "hueRange" });
+    sectionsContainer.appendChild(createLabelInput("Hue Shift:", hueRange));
+
+    // Saturation
+    const satRange = createElem("input", { type: "range", min: 50, max: 200, value: state.saturation, id: "satRange" });
+    sectionsContainer.appendChild(createLabelInput("Saturation (%):", satRange));
+
+    // Particle background toggle
+    const particleCheckbox = createElem("input", { type: "checkbox", checked: state.particleBg, id: "particleCheckbox" });
+    const particleLabel = createElem("label", {}, "");
+    particleLabel.appendChild(particleCheckbox);
+    particleLabel.appendChild(document.createTextNode(" Enable Particle Background"));
+    const particleContainer = createElem("div", { style: { marginBottom: "10px" } });
+    particleContainer.appendChild(particleLabel);
+    sectionsContainer.appendChild(particleContainer);
+
+    // Crosshair selector
+    const crosshairSelect = createElem("select", { id: "crosshairSelect" });
+    Object.keys(crosshairs).forEach(ch => {
+      const opt = createElem("option", { value: ch }, ch.charAt(0).toUpperCase() + ch.slice(1));
+      if (ch === state.selectedCrosshair) opt.selected = true;
+      crosshairSelect.appendChild(opt);
+    });
+    sectionsContainer.appendChild(createLabelInput("Crosshair Style:", crosshairSelect));
+
+    // Crosshair size
+    const chSizeRange = createElem("input", { type: "range", min: 10, max: 80, value: state.crosshairSize, id: "crosshairSize" });
+    sectionsContainer.appendChild(createLabelInput("Crosshair Size:", chSizeRange));
+
+    // Crosshair opacity
+    const chOpacityRange = createElem("input", { type: "range", min: 0.1, max: 1, step: 0.05, value: state.crosshairOpacity, id: "crosshairOpacity" });
+    sectionsContainer.appendChild(createLabelInput("Crosshair Opacity:", chOpacityRange));
+
+    // New: Crosshair Color picker
+    const chColorInput = createElem("input", { type: "color", value: state.crosshairColor, id: "crosshairColor" });
+    sectionsContainer.appendChild(createLabelInput("Crosshair Color:", chColorInput));
+
+    // New: Crosshair Thickness
+    const chThicknessRange = createElem("input", { type: "range", min: 1, max: 10, value: state.crosshairThickness, id: "crosshairThickness" });
+    sectionsContainer.appendChild(createLabelInput("Crosshair Thickness:", chThicknessRange));
+
+    // Show FPS counter toggle
+    const fpsShowCheckbox = createElem("input", { type: "checkbox", checked: state.fpsShow, id: "fpsShow" });
+    const fpsShowLabel = createElem("label", {}, "");
+    fpsShowLabel.appendChild(fpsShowCheckbox);
+    fpsShowLabel.appendChild(document.createTextNode(" Show FPS Counter"));
+    const fpsShowContainer = createElem("div", { style: { marginBottom: "10px" } });
+    fpsShowContainer.appendChild(fpsShowLabel);
+    sectionsContainer.appendChild(fpsShowContainer);
+
+    // FPS boost toggle
+    const fpsBoostCheckbox = createElem("input", { type: "checkbox", checked: state.fpsBoost, id: "fpsBoost" });
+    const fpsBoostLabel = createElem("label", {}, "");
+    fpsBoostLabel.appendChild(fpsBoostCheckbox);
+    fpsBoostLabel.appendChild(document.createTextNode(" Enable FPS Boost"));
+    const fpsBoostContainer = createElem("div", { style: { marginBottom: "15px" } });
+    fpsBoostContainer.appendChild(fpsBoostLabel);
+    sectionsContainer.appendChild(fpsBoostContainer);
+
+    // Save and Load buttons container
+    const btnContainer = createElem("div", { style: { display: "flex", justifyContent: "space-between", gap: "10px" } });
+    const saveBtn = createElem("button", { id: "saveSettingsBtn", style: { flexGrow: "1", padding: "6px", backgroundColor: "#9900ff", border: "none", color: "#fff", borderRadius: "5px", cursor: "pointer" } }, "Save Settings");
+    const loadBtn = createElem("button", { id: "loadSettingsBtn", style: { flexGrow: "1", padding: "6px", backgroundColor: "#cc33ff", border: "none", color: "#fff", borderRadius: "5px", cursor: "pointer" } }, "Load Settings");
+    btnContainer.appendChild(saveBtn);
+    btnContainer.appendChild(loadBtn);
+    sectionsContainer.appendChild(btnContainer);
+
+    // New: Reset button
+    const resetBtn = createElem("button", {
+      id: "resetSettingsBtn",
+      style: {
+        marginTop: "12px",
+        width: "100%",
+        padding: "6px",
+        backgroundColor: "#660066",
+        border: "none",
+        color: "#fff",
+        borderRadius: "5px",
+        cursor: "pointer",
+      }
+    }, "Reset to Defaults");
+    sectionsContainer.appendChild(resetBtn);
+
+    // --- Event listeners ---
+    hueRange.oninput = e => {
+      state.hueShift = +e.target.value;
+      updateStyles();
+    };
+
+    satRange.oninput = e => {
+      state.saturation = +e.target.value;
+      updateStyles();
+    };
+
+    particleCheckbox.onchange = e => {
+      state.particleBg = e.target.checked;
+      updateStyles();
+    };
+
+    crosshairSelect.onchange = e => {
+      state.selectedCrosshair = e.target.value;
+    };
+
+    chSizeRange.oninput = e => {
+      state.crosshairSize = +e.target.value;
+    };
+
+    chOpacityRange.oninput = e => {
+      state.crosshairOpacity = +e.target.value;
+    };
+
+    chColorInput.oninput = e => {
+      state.crosshairColor = e.target.value;
+    };
+
+    chThicknessRange.oninput = e => {
+      state.crosshairThickness = +e.target.value;
+    };
+
+    fpsShowCheckbox.onchange = e => {
+      state.fpsShow = e.target.checked;
+    };
+
+    fpsBoostCheckbox.onchange = e => {
+      state.fpsBoost = e.target.checked;
+    };
+
+    saveBtn.onclick = () => {
+      saveSettings();
+      alert("Settings saved!");
+    };
+
+    loadBtn.onclick = () => {
+      loadSettings();
+      applySettingsToUI();
+      updateStyles();
+      alert("Settings loaded!");
+    };
+
+    resetBtn.onclick = () => {
+      Object.assign(state, {
+        hueShift: 0,
+        saturation: 100,
+        particleBg: false,
+        selectedCrosshair: "default",
+        crosshairSize: 40,
+        crosshairOpacity: 1,
+        crosshairColor: "#ff00ff",
+        crosshairThickness: 2,
+        fpsShow: true,
+        fpsBoost: false,
+      });
+      applySettingsToUI();
+      updateStyles();
+    };
+  }
+
+  // Apply state to UI controls
+  function applySettingsToUI() {
+    document.getElementById("hueRange").value = state.hueShift;
+    document.getElementById("satRange").value = state.saturation;
+    document.getElementById("particleCheckbox").checked = state.particleBg;
+    document.getElementById("crosshairSelect").value = state.selectedCrosshair;
+    document.getElementById("crosshairSize").value = state.crosshairSize;
+    document.getElementById("crosshairOpacity").value = state.crosshairOpacity;
+    document.getElementById("crosshairColor").value = state.crosshairColor;
+    document.getElementById("crosshairThickness").value = state.crosshairThickness;
+    document.getElementById("fpsShow").checked = state.fpsShow;
+    document.getElementById("fpsBoost").checked = state.fpsBoost;
+  }
+
+  // Toggle panel visibility
+  toggleBtn.onclick = () => {
+    if (panel.style.display === "block") {
+      panel.style.display = "none";
+      toggleBtn.title = "Open Customizer Panel";
+    } else {
+      panel.style.display = "block";
+      toggleBtn.title = "Close Customizer Panel";
+    }
+  };
+
+  // Style for panel and toggle
+  Object.assign(panel.style, {
+    position: "fixed",
+    right: "10px",
+    top: "50px",
+    width: "280px",
+    maxHeight: "80vh",
+    overflowY: "auto",
+    backgroundColor: "rgba(20,0,30,0.95)",
+    color: "#ff77ff",
+    borderRadius: "10px",
+    padding: "15px",
+    fontFamily: "Arial, sans-serif",
+    fontSize: "14px",
+    boxShadow: "0 0 15px #ff00ff",
+    zIndex: 99999999,
+    display: "none",
+  });
+  Object.assign(toggleBtn.style, {
+    position: "fixed",
+    top: "10px",
+    right: "10px",
+    backgroundColor: "#9900ff",
+    border: "none",
+    color: "white",
+    borderRadius: "6px",
+    padding: "10px",
+    cursor: "pointer",
+    fontSize: "18px",
+    zIndex: 99999999,
+    boxShadow: "0 0 10px #ff00ff",
+  });
+
+  // Init
+  loadSettings();
+  buildUI();
+  applySettingsToUI();
+  updateStyles();
+
+  // Optional: you can plug in your FPS counter and particle background updates here if you want
+
+})();
